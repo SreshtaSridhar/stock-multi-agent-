@@ -3,3 +3,9 @@ uvicorn
 yfinance
 pandas
 python-dotenv
+ta
+textblob
+feedparser
+anthropic
+requests
+openai
