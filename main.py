@@ -6,6 +6,7 @@ import os
 from dotenv import load_dotenv
 import feedparser
 from textblob import TextBlob
+from openai import OpenAI
 
 # Load environment variables
 load_dotenv()
@@ -14,19 +15,21 @@ load_dotenv()
 HISTORY_PERIOD = os.getenv("DEFAULT_HISTORY_PERIOD", "6mo")
 PRICE_PERIOD = os.getenv("DEFAULT_PRICE_PERIOD", "1d")
 
+# Initialize OpenAI client
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
 app = FastAPI()
 
 
 @app.get("/")
 def home():
-    return {"message": "Stock Data Agent Running"}
+    return {"message": "Stock Multi-Agent System Running"}
 
 
 # -----------------------------
 # DATA AGENT
 # -----------------------------
 
-# Fetch current stock price
 @app.get("/price/{symbol}")
 def get_stock_price(symbol: str):
 
@@ -45,7 +48,6 @@ def get_stock_price(symbol: str):
     }
 
 
-# Fetch historical OHLC data
 @app.get("/history/{symbol}")
 def get_stock_history(symbol: str):
 
@@ -88,32 +90,25 @@ def technical_analysis(symbol: str):
 
     df = data.copy()
 
-    # RSI
     rsi_indicator = ta.momentum.RSIIndicator(df["Close"])
     df["RSI"] = rsi_indicator.rsi()
 
-    # Moving Averages
     df["MA50"] = df["Close"].rolling(window=50).mean()
     df["MA200"] = df["Close"].rolling(window=200).mean()
 
-    # MACD
     macd_indicator = ta.trend.MACD(df["Close"])
     df["MACD"] = macd_indicator.macd()
     df["MACD_SIGNAL"] = macd_indicator.macd_signal()
 
     latest = df.iloc[-1]
 
-    # Moving average trend
-    if latest["MA50"] > latest["MA200"]:
-        trend = "Uptrend"
-    else:
-        trend = "Downtrend"
+    trend = "Uptrend" if latest["MA50"] > latest["MA200"] else "Downtrend"
 
-    # MACD signal
-    if latest["MACD"] > latest["MACD_SIGNAL"]:
-        macd_signal = "Bullish crossover"
-    else:
-        macd_signal = "Bearish crossover"
+    macd_signal = (
+        "Bullish crossover"
+        if latest["MACD"] > latest["MACD_SIGNAL"]
+        else "Bearish crossover"
+    )
 
     return {
         "symbol": symbol.upper(),
@@ -153,4 +148,101 @@ def news_sentiment(symbol: str):
         "symbol": symbol.upper(),
         "headline": headline,
         "news_sentiment": sentiment
+    }
+
+
+# -----------------------------
+# STRATEGY AGENT (LLM Reasoning)
+# -----------------------------
+
+@app.get("/strategy/{symbol}")
+def strategy(symbol: str):
+
+    price_data = get_stock_price(symbol)
+    tech_data = technical_analysis(symbol)
+    news_data = news_sentiment(symbol)
+
+    if "error" in price_data:
+        return price_data
+
+    prompt = f"""
+You are a professional stock market analyst.
+
+Analyze the data below and recommend whether to BUY, HOLD, or SELL.
+
+Stock: {symbol.upper()}
+
+Price: {price_data['price']}
+Volume: {price_data['volume']}
+
+RSI: {tech_data['RSI']}
+Trend: {tech_data['Moving Average Trend']}
+MACD: {tech_data['MACD']}
+
+News Sentiment: {news_data['news_sentiment']}
+Headline: {news_data['headline']}
+
+Respond exactly in this format:
+
+Recommendation: BUY/HOLD/SELL
+Explanation: one short sentence
+"""
+
+    try:
+
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "user", "content": prompt}
+            ]
+        )
+
+        result = response.choices[0].message.content
+
+    except Exception:
+
+        # Fallback rule-based system
+        trend = tech_data["Moving Average Trend"]
+        macd = tech_data["MACD"]
+        sentiment = news_data["news_sentiment"]
+
+        if trend == "Uptrend" and macd == "Bullish crossover" and sentiment == "Positive":
+            recommendation = "BUY"
+            explanation = "Strong technical indicators with positive sentiment."
+        elif trend == "Downtrend" and macd == "Bearish crossover" and sentiment == "Negative":
+            recommendation = "SELL"
+            explanation = "Weak technical indicators with negative sentiment."
+        else:
+            recommendation = "HOLD"
+            explanation = "Mixed signals."
+
+        return {
+            "symbol": symbol.upper(),
+            "price": price_data["price"],
+            "RSI": tech_data["RSI"],
+            "trend": trend,
+            "MACD": macd,
+            "news_sentiment": sentiment,
+            "recommendation": recommendation,
+            "explanation": explanation
+        }
+
+    recommendation = "HOLD"
+    explanation = ""
+
+    for line in result.split("\n"):
+        if "Recommendation" in line:
+            recommendation = line.split(":")[1].strip()
+        if "Explanation" in line:
+            explanation = line.split(":")[1].strip()
+
+    return {
+        "symbol": symbol.upper(),
+        "price": price_data["price"],
+        "RSI": tech_data["RSI"],
+        "trend": tech_data["Moving Average Trend"],
+        "MACD": tech_data["MACD"],
+        "news_sentiment": news_data["news_sentiment"],
+        "recommendation": recommendation,
+        "explanation": explanation
     }
