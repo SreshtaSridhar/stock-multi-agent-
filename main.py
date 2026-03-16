@@ -1,6 +1,6 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 import yfinance as yf
-import pandas as pd
 import ta
 import os
 from dotenv import load_dotenv
@@ -11,14 +11,24 @@ from openai import OpenAI
 # Load environment variables
 load_dotenv()
 
-# Read values from .env
 HISTORY_PERIOD = os.getenv("DEFAULT_HISTORY_PERIOD", "6mo")
 PRICE_PERIOD = os.getenv("DEFAULT_PRICE_PERIOD", "1d")
 
-# Initialize OpenAI client
+# Initialize OpenAI
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 app = FastAPI()
+
+# -----------------------------
+# CORS (IMPORTANT FOR NEXT.JS)
+# -----------------------------
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/")
@@ -29,7 +39,6 @@ def home():
 # -----------------------------
 # DATA AGENT
 # -----------------------------
-
 @app.get("/price/{symbol}")
 def get_stock_price(symbol: str):
 
@@ -48,6 +57,9 @@ def get_stock_price(symbol: str):
     }
 
 
+# -----------------------------
+# HISTORY AGENT
+# -----------------------------
 @app.get("/history/{symbol}")
 def get_stock_history(symbol: str):
 
@@ -78,7 +90,6 @@ def get_stock_history(symbol: str):
 # -----------------------------
 # TECHNICAL ANALYSIS AGENT
 # -----------------------------
-
 @app.get("/technical/{symbol}")
 def technical_analysis(symbol: str):
 
@@ -90,12 +101,15 @@ def technical_analysis(symbol: str):
 
     df = data.copy()
 
+    # RSI
     rsi_indicator = ta.momentum.RSIIndicator(df["Close"])
     df["RSI"] = rsi_indicator.rsi()
 
+    # Moving averages
     df["MA50"] = df["Close"].rolling(window=50).mean()
     df["MA200"] = df["Close"].rolling(window=200).mean()
 
+    # MACD
     macd_indicator = ta.trend.MACD(df["Close"])
     df["MACD"] = macd_indicator.macd()
     df["MACD_SIGNAL"] = macd_indicator.macd_signal()
@@ -119,9 +133,8 @@ def technical_analysis(symbol: str):
 
 
 # -----------------------------
-# NEWS & SENTIMENT AGENT
+# NEWS SENTIMENT AGENT
 # -----------------------------
-
 @app.get("/news/{symbol}")
 def news_sentiment(symbol: str):
 
@@ -152,9 +165,8 @@ def news_sentiment(symbol: str):
 
 
 # -----------------------------
-# STRATEGY AGENT (LLM Reasoning)
+# STRATEGY AGENT (LLM)
 # -----------------------------
-
 @app.get("/strategy/{symbol}")
 def strategy(symbol: str):
 
@@ -192,29 +204,27 @@ Explanation: one short sentence
 
         response = client.chat.completions.create(
             model="gpt-4o-mini",
-            messages=[
-                {"role": "user", "content": prompt}
-            ]
+            messages=[{"role": "user", "content": prompt}]
         )
 
         result = response.choices[0].message.content
 
     except Exception:
 
-        # Fallback rule-based system
+        # fallback rule-based system
         trend = tech_data["Moving Average Trend"]
         macd = tech_data["MACD"]
         sentiment = news_data["news_sentiment"]
 
         if trend == "Uptrend" and macd == "Bullish crossover" and sentiment == "Positive":
             recommendation = "BUY"
-            explanation = "Strong technical indicators with positive sentiment."
+            explanation = "Strong bullish signals."
         elif trend == "Downtrend" and macd == "Bearish crossover" and sentiment == "Negative":
             recommendation = "SELL"
-            explanation = "Weak technical indicators with negative sentiment."
+            explanation = "Strong bearish signals."
         else:
             recommendation = "HOLD"
-            explanation = "Mixed signals."
+            explanation = "Mixed market signals."
 
         return {
             "symbol": symbol.upper(),
