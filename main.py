@@ -8,19 +8,17 @@ import feedparser
 from textblob import TextBlob
 from openai import OpenAI
 
-# Load environment variables
 load_dotenv()
 
 HISTORY_PERIOD = os.getenv("DEFAULT_HISTORY_PERIOD", "6mo")
 PRICE_PERIOD = os.getenv("DEFAULT_PRICE_PERIOD", "1d")
 
-# Initialize OpenAI
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 app = FastAPI()
 
 # -----------------------------
-# CORS (IMPORTANT FOR NEXT.JS)
+# CORS
 # -----------------------------
 app.add_middleware(
     CORSMiddleware,
@@ -37,7 +35,7 @@ def home():
 
 
 # -----------------------------
-# DATA AGENT
+# PRICE AGENT
 # -----------------------------
 @app.get("/price/{symbol}")
 def get_stock_price(symbol: str):
@@ -58,37 +56,7 @@ def get_stock_price(symbol: str):
 
 
 # -----------------------------
-# HISTORY AGENT
-# -----------------------------
-@app.get("/history/{symbol}")
-def get_stock_history(symbol: str):
-
-    stock = yf.Ticker(symbol)
-    data = stock.history(period=HISTORY_PERIOD)
-
-    if data.empty:
-        return {"error": "Invalid stock symbol"}
-
-    history = []
-
-    for index, row in data.iterrows():
-        history.append({
-            "date": str(index.date()),
-            "open": round(row["Open"], 2),
-            "high": round(row["High"], 2),
-            "low": round(row["Low"], 2),
-            "close": round(row["Close"], 2),
-            "volume": int(row["Volume"])
-        })
-
-    return {
-        "symbol": symbol.upper(),
-        "history": history
-    }
-
-
-# -----------------------------
-# TECHNICAL ANALYSIS AGENT
+# TECHNICAL AGENT
 # -----------------------------
 @app.get("/technical/{symbol}")
 def technical_analysis(symbol: str):
@@ -101,15 +69,12 @@ def technical_analysis(symbol: str):
 
     df = data.copy()
 
-    # RSI
     rsi_indicator = ta.momentum.RSIIndicator(df["Close"])
     df["RSI"] = rsi_indicator.rsi()
 
-    # Moving averages
     df["MA50"] = df["Close"].rolling(window=50).mean()
     df["MA200"] = df["Close"].rolling(window=200).mean()
 
-    # MACD
     macd_indicator = ta.trend.MACD(df["Close"])
     df["MACD"] = macd_indicator.macd()
     df["MACD_SIGNAL"] = macd_indicator.macd_signal()
@@ -133,39 +98,52 @@ def technical_analysis(symbol: str):
 
 
 # -----------------------------
-# NEWS SENTIMENT AGENT
+# NEWS AGENT
 # -----------------------------
 @app.get("/news/{symbol}")
 def news_sentiment(symbol: str):
 
-    url = f"https://news.google.com/rss/search?q={symbol}+stock"
+    try:
 
-    feed = feedparser.parse(url)
+        url = f"https://news.google.com/rss/search?q={symbol}+stock"
+        feed = feedparser.parse(url)
 
-    if len(feed.entries) == 0:
-        return {"error": "No news found"}
+        if len(feed.entries) == 0:
+            return {
+                "symbol": symbol.upper(),
+                "headline": "No recent news found",
+                "news_sentiment": "Neutral"
+            }
 
-    headline = feed.entries[0].title
+        headline = feed.entries[0].title
 
-    analysis = TextBlob(headline)
-    polarity = analysis.sentiment.polarity
+        analysis = TextBlob(headline)
+        polarity = analysis.sentiment.polarity
 
-    if polarity > 0:
-        sentiment = "Positive"
-    elif polarity < 0:
-        sentiment = "Negative"
-    else:
-        sentiment = "Neutral"
+        if polarity > 0:
+            sentiment = "Positive"
+        elif polarity < 0:
+            sentiment = "Negative"
+        else:
+            sentiment = "Neutral"
 
-    return {
-        "symbol": symbol.upper(),
-        "headline": headline,
-        "news_sentiment": sentiment
-    }
+        return {
+            "symbol": symbol.upper(),
+            "headline": headline,
+            "news_sentiment": sentiment
+        }
+
+    except Exception:
+
+        return {
+            "symbol": symbol.upper(),
+            "headline": "News unavailable",
+            "news_sentiment": "Neutral"
+        }
 
 
 # -----------------------------
-# STRATEGY AGENT (LLM)
+# STRATEGY AGENT
 # -----------------------------
 @app.get("/strategy/{symbol}")
 def strategy(symbol: str):
@@ -180,9 +158,9 @@ def strategy(symbol: str):
     prompt = f"""
 You are a professional stock market analyst.
 
-Analyze the data below and recommend whether to BUY, HOLD, or SELL.
+Analyze the following stock data.
 
-Stock: {symbol.upper()}
+Stock: {symbol}
 
 Price: {price_data['price']}
 Volume: {price_data['volume']}
@@ -209,9 +187,17 @@ Explanation: one short sentence
 
         result = response.choices[0].message.content
 
+        recommendation = "HOLD"
+        explanation = ""
+
+        for line in result.split("\n"):
+            if "Recommendation" in line:
+                recommendation = line.split(":")[1].strip()
+            if "Explanation" in line:
+                explanation = line.split(":")[1].strip()
+
     except Exception:
 
-        # fallback rule-based system
         trend = tech_data["Moving Average Trend"]
         macd = tech_data["MACD"]
         sentiment = news_data["news_sentiment"]
@@ -226,33 +212,21 @@ Explanation: one short sentence
             recommendation = "HOLD"
             explanation = "Mixed market signals."
 
-        return {
-            "symbol": symbol.upper(),
-            "price": price_data["price"],
-            "RSI": tech_data["RSI"],
-            "trend": trend,
-            "MACD": macd,
-            "news_sentiment": sentiment,
-            "recommendation": recommendation,
-            "explanation": explanation
-        }
-
-    recommendation = "HOLD"
-    explanation = ""
-
-    for line in result.split("\n"):
-        if "Recommendation" in line:
-            recommendation = line.split(":")[1].strip()
-        if "Explanation" in line:
-            explanation = line.split(":")[1].strip()
-
     return {
+
         "symbol": symbol.upper(),
+
         "price": price_data["price"],
+        "volume": price_data["volume"],
+
         "RSI": tech_data["RSI"],
         "trend": tech_data["Moving Average Trend"],
         "MACD": tech_data["MACD"],
+
         "news_sentiment": news_data["news_sentiment"],
+        "headline": news_data["headline"],
+
         "recommendation": recommendation,
         "explanation": explanation
+
     }

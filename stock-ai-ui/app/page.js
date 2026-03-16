@@ -1,83 +1,155 @@
 "use client";
 
 import { useState } from "react";
-import "./global.css";
 
 export default function Home() {
-  const [symbol, setSymbol] = useState("");
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(false);
 
-  const fetchStock = async () => {
-    if (!symbol) return;
+  const [symbols, setSymbols] = useState("");
+  const [stocks, setStocks] = useState([]);
+  const [ranking, setRanking] = useState([]);
 
-    setLoading(true);
+  const fetchStocks = async () => {
 
-    try {
+    if (!symbols) return;
+
+    const list = symbols.split(",").map(s => s.trim().toUpperCase());
+
+    let results = [];
+
+    for (let symbol of list) {
+
       const res = await fetch(`http://127.0.0.1:8000/strategy/${symbol}`);
-      const result = await res.json();
-      setData(result);
-    } catch (err) {
-      console.error(err);
+      const data = await res.json();
+
+      console.log(data); // DEBUG
+
+      results.push(data);
     }
 
-    setLoading(false);
+    setStocks(results);
+
+    // ranking based on RSI
+    const sorted = [...results].sort((a, b) => b.RSI - a.RSI);
+
+    setRanking(sorted);
   };
 
   return (
-    <div className="app">
 
-      <header className="header">
-        <h1>AI Stock Intelligence</h1>
-        <p>Multi-Agent Market Analysis</p>
-      </header>
+    <div className="container">
 
-      <div className="searchBox">
+      <h1>AI Stock Portfolio Analyzer</h1>
+
+      <div className="inputBox">
+
         <input
-          placeholder="Enter Stock Symbol (AAPL, TSLA...)"
-          value={symbol}
-          onChange={(e) => setSymbol(e.target.value.toUpperCase())}
+          type="text"
+          placeholder="Enter stocks (AAPL,TSLA,AMZN,GOOG)"
+          value={symbols}
+          onChange={(e) => setSymbols(e.target.value)}
         />
-        <button onClick={fetchStock}>Analyze</button>
+
+        <button onClick={fetchStocks}>Analyze</button>
+
       </div>
 
-      {loading && <div className="loading">Analyzing Market Data...</div>}
 
-      {data && (
-        <div className="dashboard">
+      {/* STOCK TABLE */}
 
-          <div className="card">
-            <h3>Price</h3>
-            <p className="value">${data.price}</p>
-          </div>
+      {stocks.length > 0 && (
 
-          <div className="card">
-            <h3>RSI</h3>
-            <p className="value">{data.RSI}</p>
-          </div>
+        <table>
 
-          <div className="card">
-            <h3>Trend</h3>
-            <p className="value">{data.trend}</p>
-          </div>
+          <thead>
+            <tr>
+              <th>Symbol</th>
+              <th>Price</th>
+              <th>Volume</th>
+              <th>RSI</th>
+              <th>Trend</th>
+              <th>MACD</th>
+              <th>Sentiment</th>
+              <th>Recommendation</th>
+              <th>Explanation</th>
+            </tr>
+          </thead>
 
-          <div className="card">
-            <h3>MACD</h3>
-            <p className="value">{data.MACD}</p>
-          </div>
+          <tbody>
 
-          <div className="card">
-            <h3>News Sentiment</h3>
-            <p className="value">{data.news_sentiment}</p>
-          </div>
+            {stocks.map((s, i) => (
 
-          <div className="card recommendation">
-            <h3>AI Recommendation</h3>
-            <p className="signal">{data.recommendation}</p>
-            <p className="explanation">{data.explanation}</p>
-          </div>
+              <tr key={i}>
+
+                <td>{s.symbol}</td>
+
+                <td>${s.price}</td>
+
+                <td>{s.volume?.toLocaleString()}</td>
+
+                <td>{s.RSI}</td>
+
+                <td>{s.trend}</td>
+
+                <td>{s.MACD}</td>
+
+                <td>{s.news_sentiment}</td>
+
+                <td className="rec">{s.recommendation}</td>
+
+                <td>{s.explanation}</td>
+
+              </tr>
+
+            ))}
+
+          </tbody>
+
+        </table>
+
+      )}
+
+
+      {/* HEADLINES */}
+
+      {stocks.length > 0 && (
+
+        <div className="news">
+
+          <h2>Latest Headlines</h2>
+
+          {stocks.map((s, i) => (
+
+            <p key={i}>
+              <b>{s.symbol}</b> → {s.headline}
+            </p>
+
+          ))}
 
         </div>
+
+      )}
+
+
+      {/* PORTFOLIO RANKING */}
+
+      {ranking.length > 0 && (
+
+        <div className="ranking">
+
+          <h2>Portfolio Ranking (Based on RSI)</h2>
+
+          {ranking.map((s, index) => (
+
+            <p key={index}>
+
+              {index + 1}. {s.symbol}
+
+            </p>
+
+          ))}
+
+        </div>
+
       )}
 
     </div>
