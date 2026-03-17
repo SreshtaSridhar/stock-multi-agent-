@@ -10,7 +10,7 @@ from openai import OpenAI
 
 load_dotenv()
 
-HISTORY_PERIOD = os.getenv("DEFAULT_HISTORY_PERIOD", "6mo")
+HISTORY_PERIOD = os.getenv("DEFAULT_HISTORY_PERIOD", "1y")
 PRICE_PERIOD = os.getenv("DEFAULT_PRICE_PERIOD", "1d")
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -202,15 +202,50 @@ Explanation: one short sentence
         macd = tech_data["MACD"]
         sentiment = news_data["news_sentiment"]
 
-        if trend == "Uptrend" and macd == "Bullish crossover" and sentiment == "Positive":
-            recommendation = "BUY"
-            explanation = "Strong bullish signals."
-        elif trend == "Downtrend" and macd == "Bearish crossover" and sentiment == "Negative":
-            recommendation = "SELL"
-            explanation = "Strong bearish signals."
-        else:
-            recommendation = "HOLD"
-            explanation = "Mixed market signals."
+        # if trend == "Uptrend" and macd == "Bullish crossover" and sentiment == "Positive":
+        #     recommendation = "BUY"
+        #     explanation = "Strong bullish signals."
+        # elif trend == "Downtrend" and macd == "Bearish crossover" and sentiment == "Negative":
+        #     recommendation = "SELL"
+        #     explanation = "Strong bearish signals."
+        # else:
+        #     recommendation = "HOLD"
+        #     explanation = "Mixed market signals."
+
+        score = 0
+
+    # Trend
+    if trend == "Uptrend":
+        score += 2
+
+    # MACD
+    if macd == "Bullish crossover":
+        score += 2
+    elif macd == "Bearish crossover":
+        score -= 2
+
+    # RSI
+    if tech_data["RSI"] > 60:
+        score += 1
+    elif tech_data["RSI"] < 40:
+        score -= 1
+
+    # Sentiment
+    if sentiment == "Positive":
+        score += 1
+    elif sentiment == "Negative":
+        score -= 1
+
+    # Final decision
+    if score >= 3:
+        recommendation = "BUY"
+        explanation = "Multiple bullish signals."
+    elif score <= -2:
+        recommendation = "SELL"
+        explanation = "Multiple bearish signals."
+    else:
+        recommendation = "HOLD"
+        explanation = "Mixed signals."
 
     return {
 
