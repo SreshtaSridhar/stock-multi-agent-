@@ -6,14 +6,15 @@ import os
 from dotenv import load_dotenv
 import feedparser
 from textblob import TextBlob
-from openai import OpenAI
+#from openai import OpenAI
+from groq import Groq
 
 load_dotenv()
 
 HISTORY_PERIOD = os.getenv("DEFAULT_HISTORY_PERIOD", "1y")
 PRICE_PERIOD = os.getenv("DEFAULT_PRICE_PERIOD", "1d")
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
 app = FastAPI()
 
@@ -181,7 +182,7 @@ Explanation: one short sentence
     try:
 
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="llama-3.1-8b-instant",
             messages=[{"role": "user", "content": prompt}]
         )
 
@@ -196,7 +197,8 @@ Explanation: one short sentence
             if "Explanation" in line:
                 explanation = line.split(":")[1].strip()
 
-    except Exception:
+    except Exception as e:
+        print(f"LLM FAILED: {e}") 
 
         trend = tech_data["Moving Average Trend"]
         macd = tech_data["MACD"]
@@ -214,38 +216,38 @@ Explanation: one short sentence
 
         score = 0
 
-    # Trend
-    if trend == "Uptrend":
-        score += 2
+        # Trend
+        if trend == "Uptrend":
+            score += 2
 
-    # MACD
-    if macd == "Bullish crossover":
-        score += 2
-    elif macd == "Bearish crossover":
-        score -= 2
+        # MACD
+        if macd == "Bullish crossover":
+            score += 2
+        elif macd == "Bearish crossover":
+            score -= 2
 
-    # RSI
-    if tech_data["RSI"] > 60:
-        score += 1
-    elif tech_data["RSI"] < 40:
-        score -= 1
+        # RSI
+        if tech_data["RSI"] > 60:
+            score += 1
+        elif tech_data["RSI"] < 40:
+            score -= 1
 
-    # Sentiment
-    if sentiment == "Positive":
-        score += 1
-    elif sentiment == "Negative":
-        score -= 1
+        # Sentiment
+        if sentiment == "Positive":
+            score += 1
+        elif sentiment == "Negative":
+            score -= 1
 
-    # Final decision
-    if score >= 3:
-        recommendation = "BUY"
-        explanation = "Multiple bullish signals."
-    elif score <= -2:
-        recommendation = "SELL"
-        explanation = "Multiple bearish signals."
-    else:
-        recommendation = "HOLD"
-        explanation = "Mixed signals."
+        # Final decision
+        if score >= 3:
+            recommendation = "BUY"
+            explanation = "Multiple bullish signals."
+        elif score <= -2:
+            recommendation = "SELL"
+            explanation = "Multiple bearish signals."
+        else:
+            recommendation = "HOLD"
+            explanation = "Mixed signals."
 
     return {
 
