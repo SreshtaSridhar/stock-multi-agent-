@@ -8,6 +8,12 @@ export default function Home() {
   const [stocks, setStocks] = useState([]);
   const [ranking, setRanking] = useState([]);
 
+  // ✅ Safe number formatter (fixes hydration issue)
+  const formatNumber = (num) => {
+    if (!num) return "-";
+    return new Intl.NumberFormat("en-US").format(num);
+  };
+
   const fetchStocks = async () => {
 
     if (!symbols) return;
@@ -18,19 +24,23 @@ export default function Home() {
 
     for (let symbol of list) {
 
-      const res = await fetch(`http://127.0.0.1:8000/strategy/${symbol}`);
-      const data = await res.json();
+      try {
+        const res = await fetch(`http://127.0.0.1:8000/strategy/${symbol}`);
+        const data = await res.json();
 
-      console.log(data); // DEBUG
+        console.log(data);
 
-      results.push(data);
+        results.push(data);
+
+      } catch (err) {
+        console.error("Error fetching:", symbol, err);
+      }
     }
 
     setStocks(results);
 
-    // ranking based on RSI
+    // ✅ Ranking based on RSI
     const sorted = [...results].sort((a, b) => b.RSI - a.RSI);
-
     setRanking(sorted);
   };
 
@@ -76,15 +86,16 @@ export default function Home() {
 
           <tbody>
 
-            {stocks.map((s, i) => (
+            {stocks.map((s) => (
 
-              <tr key={i}>
+              <tr key={s.symbol}>
 
                 <td>{s.symbol}</td>
 
                 <td>${s.price}</td>
 
-                <td>{s.volume?.toLocaleString()}</td>
+                {/* ✅ FIXED */}
+                <td>{formatNumber(s.volume)}</td>
 
                 <td>{s.RSI}</td>
 
@@ -117,9 +128,9 @@ export default function Home() {
 
           <h2>Latest Headlines</h2>
 
-          {stocks.map((s, i) => (
+          {stocks.map((s) => (
 
-            <p key={i}>
+            <p key={s.symbol}>
               <b>{s.symbol}</b> → {s.headline}
             </p>
 
@@ -136,14 +147,12 @@ export default function Home() {
 
         <div className="ranking">
 
-          <h2>Portfolio Ranking (Based on RSI)</h2>
+          <h2>Portfolio Ranking</h2>
 
           {ranking.map((s, index) => (
 
-            <p key={index}>
-
+            <p key={s.symbol}>
               {index + 1}. {s.symbol}
-
             </p>
 
           ))}
